@@ -1,24 +1,27 @@
 package se.vendler;
 
 import com.rabbitmq.client.*;
-import org.apache.log4j.Logger;
+import org.apache.log4j.LogManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import se.vendler.conbee.ConbeeBasicParser;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 public class ConbeeIIWorker extends Thread{
     private ConnectionFactory connectionFactory;
     private Channel channel;
     private Connection connection;
     private Consumer consumer;
-    private Logger logger = Logger.getLogger(this.getClass());
-    private ConbeeBasicParser conbeeBasicParser;
-    private HumidityConsumer humidityConsumer;
-    private TemperatureConsumer temperatureConsumer;
+    private Logger logger = LoggerFactory.getLogger(this.getClass());
+    private ExecutorService executorService = new ScheduledThreadPoolExecutor(5);
+    private final ConbeeBasicParser conbeeBasicParser;
     public ConbeeIIWorker(HumidityConsumer humidityConsumer, TemperatureConsumer temperatureConsumer){
 
-        conbeeBasicParser = new ConbeeBasicParser(temperatureConsumer, humidityConsumer);
-        conbeeBasicParser.start();
+        this.conbeeBasicParser = new ConbeeBasicParser(temperatureConsumer, humidityConsumer);
     }
 
     private void connectToBus() {
@@ -42,7 +45,10 @@ public class ConbeeIIWorker extends Thread{
                         public void handleDelivery(String consumerTag, Envelope envelope, AMQP.BasicProperties properties, byte[] body) throws IOException {
                             String message = new String(body);
                             logger.info(message);
-                            conbeeBasicParser.parse(message);
+                            executorService.submit(() -> {
+                                setName("Parser thread");
+                                conbeeBasicParser.parse(message);
+                            });
                             channel.basicAck(envelope.getDeliveryTag(),false);
                         }
                     };
